@@ -27,13 +27,14 @@ module Data.Conduit.Resumable (
 ) where
 
 import Control.Monad
+import Data.Conduit
 import Data.Conduit.Internal
 import Data.Void
 
 -- ResumableSource (same fixity as $$)
-infixr 0 $$+
-infixr 0 $$++
-infixr 0 $$+-
+-- infixr 0 $$+
+-- infixr 0 $$++
+-- infixr 0 $$+-
 
 -- ResumableSink (same fixity as $$)
 infixr 0 +$$
@@ -52,26 +53,6 @@ infixr 2 =$++
 infixr 2 =$+-
 
 ------------------------------------------------------------------------
--- Bootstrap
---
--- These are defined in "Data.Conduit", but are defined again here
--- to avoid circular imports.
-
-infixr 0 $$
-infixr 2 =$=
-
-($$) :: Monad m => Source m a -> Sink a m b -> m b
-($$) src sink = do
-    (rsrc, res) <- src $$+ sink
-    rsrc $$+- return ()
-    return res
-{-# INLINE ($$) #-}
-
-(=$=) :: Monad m => Conduit a m b -> ConduitM b c m r -> ConduitM a c m r
-(=$=) (ConduitM left) (ConduitM right) = ConduitM $ pipeL left right
-{-# INLINE (=$=) #-}
-
-------------------------------------------------------------------------
 -- ResumableSource
 --
 -- NOTE: $$ is defined in terms of $$+ and $$+-
@@ -82,37 +63,6 @@ infixr 2 =$=
 -- | Convert a 'Source' into a 'ResumableSource' so it can be used with '$$++'.
 newResumableSource :: Monad m => Source m o -> ResumableSource m o
 newResumableSource src = ResumableSource src (return ())
-
--- | The connect-and-resume operator. This does not close the @Source@, but
--- instead returns it to be used again. This allows a @Source@ to be used
--- incrementally in a large program, without forcing the entire program to live
--- in the @Sink@ monad.
---
--- Mnemonic: connect + do more.
---
--- Since 0.5.0
-($$+) :: Monad m => Source m a -> Sink a m b -> m (ResumableSource m a, b)
-($$+) src sink = newResumableSource src $$++ sink
-{-# INLINE ($$+) #-}
-
--- | Continue processing after usage of @$$+@.
---
--- Since 0.5.0
-($$++) :: Monad m => ResumableSource m a -> Sink a m b -> m (ResumableSource m a, b)
-($$++) = connectResume
-{-# INLINE ($$++) #-}
-
--- | Complete processing of a @ResumableSource@. This will run the finalizer
--- associated with the @ResumableSource@. In order to guarantee process resource
--- finalization, you /must/ use this operator after using @$$+@ and @$$++@.
---
--- Since 0.5.0
-($$+-) :: Monad m => ResumableSource m a -> Sink a m b -> m b
-($$+-) rsrc sink = do
-    (ResumableSource _ final, res) <- connectResume rsrc sink
-    final
-    return res
-{-# INLINE ($$+-) #-}
 
 -- | Finalize a 'ResumableSource' by turning it into a 'Source'.
 -- The resulting 'Source' may only be used once.

@@ -1,7 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
-import Data.Conduit
-import Data.Conduit.Resumable
 import Test.Hspec
+import Data.Conduit
+import Data.Conduit.List (consume, sourceList, sourceNull)
+import qualified Data.Conduit.List as CL
+import Data.Conduit.Resumable
+
+import Control.Monad.IO.Class
+import Data.Char (isSpace)
+import Data.IORef
 
 main :: IO ()
 main = hspec $ do
@@ -49,16 +55,16 @@ main = hspec $ do
             testFinalizeWith $ \rsrc sink -> finishResumableSource rsrc $$ sink
 
     describe "resumable conduits" $ do
-        let c0 = CL.groupBy (==) :: C.Conduit Int IO [Int]
+        let c0 = CL.groupBy (==) :: Conduit Int IO [Int]
 
         it "doesn't see EOF until termination" $ do
-            (c1, [[1,1],[2,2]]) <- CL.sourceList [1,1,2,2,3,3] C.$$ c0 CR.=$+ CL.consume
-            [[3,3]] <- CL.sourceList [] C.$$ c1 CR.=$+- CL.consume
+            (c1, [[1,1],[2,2]]) <- CL.sourceList [1,1,2,2,3,3] $$ c0 =$+ CL.consume
+            [[3,3]] <- CL.sourceList [] $$ c1 =$+- CL.consume
             return ()
 
         it "empty case" $ do
-            (c1, []) <- sourceNull C.$$ c0 CR.=$+ CL.consume
-            [] <- sourceNull C.$$ c1 CR.=$+- CL.consume
+            (c1, []) <- sourceNull $$ c0 =$+ CL.consume
+            [] <- sourceNull $$ c1 =$+- CL.consume
             return ()
 
         it "doesn't see EOF between incremental feeds" $ do
@@ -104,23 +110,23 @@ main = hspec $ do
 
     describe "resumable sink" $ do
       it "behaves like normal conduit when -+$$ used immediately" $ do
-        r <- C.runResourceT $
+        r <- runResourceT $
                (sourceList ["hello", "world"]) -+$$ (newResumableSink consume)
         r `shouldBe` ["hello", "world" :: String]
 
       it "sink can be resumed" $ do
-        r <- C.runResourceT $ do
+        r <- runResourceT $ do
                Left r1 <- ((sourceList ["hello", "world"]) +$$ consume)
                (sourceList ["hello", "world"]) -+$$ r1
         r `shouldBe` ["hello", "world", "hello", "world" :: String]
 
       it "does correct cleanup" $ do
         s <- newIORef (0 :: Int, 0 :: Int, 0 :: Int)
-        r <- C.runResourceT $ do
+        r <- runResourceT $ do
                Left r1 <-
-                 ((C.addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a + 1, b, c))) (sourceList ["hello", "world"])) +$$
-                            C.addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a,b,c+1))) (consume))
-               ((C.addCleanup (const . liftIO $ modifyIORef s (\(a, b, c) -> (a, b + 1, c))) (sourceList ["hello", "world"]))) -+$$ r1
+                 ((addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a + 1, b, c))) (sourceList ["hello", "world"])) +$$
+                            addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a,b,c+1))) (consume))
+               ((addCleanup (const . liftIO $ modifyIORef s (\(a, b, c) -> (a, b + 1, c))) (sourceList ["hello", "world"]))) -+$$ r1
         r `shouldBe` ["hello", "world", "hello", "world" :: String]
         sfinal <- readIORef s
         sfinal `shouldBe` (1, 1, 1)

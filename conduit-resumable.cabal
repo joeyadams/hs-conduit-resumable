@@ -22,6 +22,8 @@ library
         Data.Conduit.Resumable
 
     build-depends: base >= 4.3 && < 5
+                 , conduit
+                 , void
 
     ghc-options: -Wall -fwarn-tabs
 
@@ -34,4 +36,7 @@ test-suite test
     ghc-options: -Wall -fwarn-tabs -fno-warn-missing-signatures
 
     build-depends: base
+                 , conduit
                  , conduit-resumable
+                 , hspec
+                 , transformers

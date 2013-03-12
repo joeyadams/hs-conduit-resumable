@@ -1,0 +1,37 @@
+name:                conduit-resumable
+version:             0.1
+synopsis:            Resumable sinks and conduits
+-- description:
+license:             BSD3
+license-file:        LICENSE
+author:              Joey Adams
+maintainer:          joeyadams3.14159@gmail.com
+copyright:           Copyright (c) Joseph Adams 2013
+category:            Data
+build-type:          Simple
+cabal-version:       >=1.8
+homepage:            http://github.com/joeyadams/hs-conduit-resumable
+bug-reports:         http://github.com/joeyadams/hs-conduit-resumable/issues
+
+source-repository head
+    type:       git
+    location:   git://github.com/joeyadams/hs-conduit-resumable.git
+
+library
+    exposed-modules:
+        Data.Conduit.Resumable
+
+    build-depends: base >= 4.3 && < 5
+
+    ghc-options: -Wall -fwarn-tabs
+
+test-suite test
+    type: exitcode-stdio-1.0
+
+    hs-source-dirs: test
+    main-is:        main.hs
+
+    ghc-options: -Wall -fwarn-tabs -fno-warn-missing-signatures
+
+    build-depends: base
+                 , conduit-resumable

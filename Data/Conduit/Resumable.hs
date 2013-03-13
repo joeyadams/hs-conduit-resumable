@@ -140,7 +140,14 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
        => ResumableConduit a m b
        -> Sink b m r
        -> Sink a m (ResumableConduit a m b, r)
-(=$++) (ResumableConduit conduit0 final0) (ConduitM sink0) =
+(=$++) = resumeConduit True
+
+resumeConduit :: Monad m
+              => Bool
+              -> ResumableConduit a m b
+              -> Sink b m r
+              -> Sink a m (ResumableConduit a m b, r)
+resumeConduit bypassEOF (ResumableConduit conduit0 final0) (ConduitM sink0) =
     ConduitM $ goSink final0 conduit0 sink0
   where
     goSink final conduit sink =
@@ -156,10 +163,16 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
     goConduit rp rc final conduit =
         case conduit of
             HaveOutput conduit' final' o -> goSink final' conduit' (rp o)
-            NeedInput left' _lc -> NeedInput (recurse . left')
-                                             (goSink final conduit . rc)
-               -- Forward EOF to sink, but leave the conduit alone
-               -- so it accepts input from the next source.
+            NeedInput left' lc ->
+                NeedInput (recurse . left')
+                          (if bypassEOF then
+                              -- Forward EOF to sink, but leave the conduit
+                              -- alone so it accepts input from the next source.
+                              goSink final conduit . rc
+                           else
+                              -- Send EOF through the conduit like 'pipe' does.
+                              recurse . lc
+                          )
             Done r              -> goSink (return ()) (Done r) (rc r)
             PipeM mp            -> PipeM (liftM recurse mp)
             Leftover conduit' i -> Leftover (recurse conduit') i
@@ -173,6 +186,6 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
        -> Sink b m r
        -> Sink a m r
 (=$+-) rconduit sink = do
-    (ResumableConduit _ final, res) <- rconduit =$++ sink
+    (ResumableConduit _ final, res) <- resumeConduit False rconduit sink
     lift final
     return res

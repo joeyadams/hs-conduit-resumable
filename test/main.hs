@@ -55,8 +55,10 @@ main = hspec $ do
         let c0 = CL.groupBy (==) :: Conduit Int IO [Int]
 
         it "doesn't see EOF until termination" $ do
-            (c1, [[1,1],[2,2]]) <- CL.sourceList [1,1,2,2,3,3] $$ c0 =$+ CL.consume
-            [[3,3]] <- CL.sourceList [] $$ c1 =$+- CL.consume
+            (c1, a) <- CL.sourceList [1,1,2,2,3,3] $$ c0 =$+ CL.consume
+            a `shouldBe` [[1,1],[2,2]]
+            b <- CL.sourceList [] $$ c1 =$+- CL.consume
+            b `shouldBe` [[3,3]]
             return ()
 
         it "empty case" $ do

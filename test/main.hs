@@ -105,6 +105,74 @@ main = hspec $ do
                 ["three"] <- c6 =$+- CL.consume
                 return ()
 
+        it' "finalizing conduit without consuming all output calls finalizer" $ do
+            fin <- newIORef []
+            let takeFin = liftIO $ do
+                    xs <- readIORef fin
+                    writeIORef fin []
+                    return $! reverse xs
+
+            let c1 = do
+                    m <- await
+                    case m of
+                        Nothing -> do
+                            yieldOr '1' (modifyIORef fin ('1':))
+                            yieldOr '2' (modifyIORef fin ('2':))
+                            yieldOr '3' (modifyIORef fin ('3':))
+                            liftIO $ modifyIORef fin ('4':)
+                        Just x -> do
+                            yieldOr x (modifyIORef fin ('x':))
+                            yieldOr x (modifyIORef fin ('y':))
+                            c1
+
+            sourceList "abc" $$ do
+                (c2, ()) <- c1 =$+ do
+                    Just 'a' <- await
+                    Just 'a' <- await
+                    Just 'b' <- await
+                    return ()
+                [] <- takeFin -- conduit still running, so shouldn't be finalized
+
+                (c3, ()) <- c2 =$++ do
+                    Just 'b' <- await
+                    return ()
+                [] <- takeFin
+
+                (c4, ()) <- c3 =$++ do
+                    Just 'c' <- await
+                    Just 'c' <- await
+                    Nothing <- await  -- EOF skipped conduit
+                    return ()
+                [] <- takeFin
+
+                c4 =$+- do
+                    Just '1' <- await
+                    Just '2' <- await
+                    return ()
+                ['2'] <- takeFin
+
+                return ()
+
+            -- Test non-resumed conduits, too.
+            sourceList "abc" $$ do
+                c1 =$ do
+                    Just 'a' <- await
+                    Just 'a' <- await
+                    Just 'b' <- await
+                    return ()
+                ['x'] <- takeFin
+
+                c1 =$ return ()
+                [] <- takeFin
+
+                c1 =$ do
+                    Just 'c' <- await
+                    Just 'c' <- await
+                    return ()
+                ['y'] <- takeFin
+
+                return ()
+
     describe "resumable sink" $ do
       it "sink can be resumed" $ do
         r <- runResourceT $ do

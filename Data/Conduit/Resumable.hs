@@ -11,7 +11,11 @@ module Data.Conduit.Resumable (
     -- * Resumable sinks
     -- $sink
     (+$$),
+
+    -- ** Combining with resumable sources
     (+$$+),
+    (+$$++),
+    (+$$+-),
 
     -- * Resumable conduits
     ResumableConduit,
@@ -80,17 +84,21 @@ newResumableSource src = ResumableSource src (return ())
       => Source m i
       -> Sink i m r
       -> m (Either (Sink i m r) r)
-(+$$) src sink = do
-    (ResumableSource _ final, res) <- newResumableSource src +$$+ sink
-    final
-    return res
+(+$$) src sink = newResumableSource src +$$+- sink
 
--- | Connect a resumable source to a sink, allowing both to be resumed.
+-- | Connect a source to a sink, allowing both to be resumed.
 (+$$+) :: Monad m
-       => ResumableSource m i
+       => Source m i
        -> Sink i m r
        -> m (ResumableSource m i, Either (Sink i m r) r)
-(+$$+) (ResumableSource (ConduitM left0) final0) (ConduitM right0) =
+(+$$+) src sink = newResumableSource src +$$++ sink
+
+-- | Like '+$$+', but resume an already-running source.
+(+$$++) :: Monad m
+        => ResumableSource m i
+        -> Sink i m r
+        -> m (ResumableSource m i, Either (Sink i m r) r)
+(+$$++) (ResumableSource (ConduitM left0) final0) (ConduitM right0) =
     goRight final0 left0 right0
   where
     goRight final left right =
@@ -112,6 +120,16 @@ newResumableSource src = ResumableSource src (return ())
             Leftover p _              -> recurse p
       where
         recurse = goLeft rp rc final
+
+-- | Finish processing a 'ResumableSource', but allow the 'Sink' to be reused.
+(+$$+-) :: Monad m
+        => ResumableSource m i
+        -> Sink i m r
+        -> m (Either (Sink i m r) r)
+(+$$+-) rsrc sink = do
+    (ResumableSource _ final, res) <- rsrc +$$++ sink
+    final
+    return res
 
 ------------------------------------------------------------------------
 -- Resumable conduits

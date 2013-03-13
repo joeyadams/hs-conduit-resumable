@@ -108,30 +108,30 @@ data ResumableConduit i m o = ResumableConduit (Pipe i i o () m ()) (m ())
 newResumableConduit :: Monad m => Conduit i m o -> ResumableConduit i m o
 newResumableConduit (ConduitM p) = ResumableConduit p (return ())
 
--- | Fuse a conduit behind a consumer, but allow the conduit to be reused after
--- the consumer returns.
+-- | Fuse a conduit behind a sink, but allow the conduit to be reused after
+-- the sink returns.
 --
 -- When the source runs out, the stream terminator is sent directly to
--- the consumer, bypassing the conduit.  Some conduits wait for a stream terminator
+-- the sink, bypassing the conduit.  Some conduits wait for a stream terminator
 -- before producing their remaining output, so be sure to use '=$+-'
 -- to \"flush\" this data out.
 (=$+) :: Monad m
-      => Conduit a m b      -- ^ Filters incoming data
-      -> ConduitM b c m r   -- ^ Consumer
-      -> ConduitM a c m (ResumableConduit a m b, r)
+      => Conduit a m b
+      -> Sink b m r
+      -> Sink a m (ResumableConduit a m b, r)
 (=$+) conduit sink = newResumableConduit conduit =$++ sink
 
 -- | Continue using a conduit after '=$+'.
 (=$++) :: Monad m
-       => ResumableConduit a m b  -- ^ Filters incoming data
-       -> ConduitM b c m r        -- ^ Consumer
-       -> ConduitM a c m (ResumableConduit a m b, r)
+       => ResumableConduit a m b
+       -> Sink b m r
+       -> Sink a m (ResumableConduit a m b, r)
 (=$++) (ResumableConduit conduit0 final0) (ConduitM sink0) =
     ConduitM $ goSink final0 conduit0 sink0
   where
     goSink final conduit sink =
         case sink of
-            HaveOutput p c o  -> HaveOutput (recurse p) (c >> final) o
+            HaveOutput _ _ o  -> absurd o
             NeedInput rp rc   -> goConduit rp rc final conduit
             Done r            -> Done (ResumableConduit conduit final, r)
             PipeM mp          -> PipeM (liftM recurse mp)
@@ -153,11 +153,11 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
         recurse = goConduit rp rc final
 
 -- | Finalize a 'ResumableConduit' by using it one more time.  It will be
--- closed when the consumer finishes.
+-- closed when the sink finishes.
 (=$+-) :: Monad m
-       => ResumableConduit a m b  -- ^ Filters incoming data
-       -> ConduitM b c m r        -- ^ Consumer
-       -> ConduitM a c m r
+       => ResumableConduit a m b
+       -> Sink b m r
+       -> Sink a m r
 (=$+-) rconduit sink = finishResumableConduit rconduit =$= sink
 
 -- | Finalize a 'ResumableConduit' by turning it into a 'Conduit'.

@@ -11,6 +11,7 @@ module Data.Conduit.Resumable (
     -- * Resumable sinks
     -- $sink
     (+$$),
+    (+$$+),
 
     -- * Resumable conduits
     ResumableConduit,
@@ -33,6 +34,7 @@ import Data.Void
 
 -- ResumableSink (same fixity as $$)
 infixr 0 +$$
+infixr 0 +$$+
 
 -- Not implemented yet
 -- ResumableConduit left fusion (same fixity as $=)
@@ -78,14 +80,24 @@ newResumableSource src = ResumableSource src (return ())
       => Source m i
       -> Sink i m r
       -> m (Either (Sink i m r) r)
-(+$$) (ConduitM left0) (ConduitM right0) =
-    goRight (return ()) left0 right0
+(+$$) src sink = do
+    (ResumableSource _ final, res) <- newResumableSource src +$$+ sink
+    final
+    return res
+
+-- | Connect a resumable source to a sink, allowing both to be resumed.
+(+$$+) :: Monad m
+       => ResumableSource m i
+       -> Sink i m r
+       -> m (ResumableSource m i, Either (Sink i m r) r)
+(+$$+) (ResumableSource (ConduitM left0) final0) (ConduitM right0) =
+    goRight final0 left0 right0
   where
     goRight final left right =
         case right of
             HaveOutput _ _ o  -> absurd o
             NeedInput rp rc   -> goLeft rp rc final left
-            Done r            -> final >> return (Right r)
+            Done r            -> return (ResumableSource (ConduitM left) final, Right r)
             PipeM mp          -> mp >>= goRight final left
             Leftover p i      -> goRight final (HaveOutput left final i) p
 
@@ -93,8 +105,9 @@ newResumableSource src = ResumableSource src (return ())
         case left of
             HaveOutput left' final' o -> goRight final' left' (rp o)
             NeedInput _ lc            -> recurse (lc ())
-            Done _                    -> return $ Left $
-                                         ConduitM $ NeedInput rp rc
+            Done r                    -> return ( ResumableSource (ConduitM (Done r)) (return ())
+                                                , Left $ ConduitM $ NeedInput rp rc
+                                                )
             PipeM mp                  -> mp >>= recurse
             Leftover p _              -> recurse p
       where

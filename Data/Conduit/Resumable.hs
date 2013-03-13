@@ -1,7 +1,7 @@
--- |
--- Stability: experimental
 module Data.Conduit.Resumable (
     -- * Resumable sources
+    -- | The following (except 'newResumableSource') is re-exported
+    --   from "Data.Conduit".
     ResumableSource,
     newResumableSource,
     ($$+),

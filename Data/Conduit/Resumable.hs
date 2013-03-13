@@ -21,6 +21,7 @@ module Data.Conduit.Resumable (
 ) where
 
 import Control.Monad
+import Control.Monad.Trans.Class (lift)
 import Data.Conduit
 import Data.Conduit.Internal
 import Data.Void
@@ -158,30 +159,7 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
        => ResumableConduit a m b
        -> Sink b m r
        -> Sink a m r
-(=$+-) rconduit sink = finishResumableConduit rconduit =$= sink
-
--- | Finalize a 'ResumableConduit' by turning it into a 'Conduit'.
--- The resulting 'Conduit' may only be used once.
---
--- This may be used instead of '=$+-' to finalize a 'ResumableConduit'.
-finishResumableConduit :: Monad m => ResumableConduit i m o -> Conduit i m o
-finishResumableConduit (ResumableConduit p final) =
-    ConduitM $ embedFinalizer final p
-
--- | Make the given 'Pipe' run the given finalizer when it finishes,
--- unless it overrides this finalizer by calling 'Data.Conduit.yieldOr'.
-embedFinalizer :: Monad m => m () -> Pipe l i o u m r -> Pipe l i o u m r
-embedFinalizer final0 p0 =
-    go final0 p0
-  where
-    go final p =
-        case p of
-            HaveOutput _ _ _ -> p -- Finalizer overridden.
-                                  -- Downstream will call the new finalizer
-                                  -- if it doesn't use this output value.
-            NeedInput i u -> NeedInput (recurse . i) (recurse . u)
-            Done r        -> PipeM (final >> return (Done r))
-            PipeM mp      -> PipeM (liftM recurse mp)
-            Leftover p' l -> Leftover (recurse p') l
-      where
-        recurse = go final
+(=$+-) rconduit sink = do
+    (ResumableConduit _ final, res) <- rconduit =$++ sink
+    lift final
+    return res

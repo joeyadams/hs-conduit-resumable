@@ -51,9 +51,6 @@ main = hspec $ do
         it "$$+- finalizes properly" $ do
             testFinalizeWith ($$+-)
 
-        it "finishResumableSource finalizes properly" $ do
-            testFinalizeWith $ \rsrc sink -> finishResumableSource rsrc $$ sink
-
     describe "resumable conduits" $ do
         let c0 = CL.groupBy (==) :: Conduit Int IO [Int]
 
@@ -106,18 +103,11 @@ main = hspec $ do
                 ["three"] <- c6 =$+- CL.consume
                 return ()
 
-        -- TODO: test -$+ inside of a conduit, rather than just a sink.
-
     describe "resumable sink" $ do
-      it "behaves like normal conduit when -+$$ used immediately" $ do
-        r <- runResourceT $
-               (sourceList ["hello", "world"]) -+$$ (newResumableSink consume)
-        r `shouldBe` ["hello", "world" :: String]
-
       it "sink can be resumed" $ do
         r <- runResourceT $ do
                Left r1 <- ((sourceList ["hello", "world"]) +$$ consume)
-               (sourceList ["hello", "world"]) -+$$ r1
+               (sourceList ["hello", "world"]) $$ r1
         r `shouldBe` ["hello", "world", "hello", "world" :: String]
 
       it "does correct cleanup" $ do
@@ -126,7 +116,7 @@ main = hspec $ do
                Left r1 <-
                  ((addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a + 1, b, c))) (sourceList ["hello", "world"])) +$$
                             addCleanup (const . liftIO $ modifyIORef s (\(a,b,c) -> (a,b,c+1))) (consume))
-               ((addCleanup (const . liftIO $ modifyIORef s (\(a, b, c) -> (a, b + 1, c))) (sourceList ["hello", "world"]))) -+$$ r1
+               ((addCleanup (const . liftIO $ modifyIORef s (\(a, b, c) -> (a, b + 1, c))) (sourceList ["hello", "world"]))) $$ r1
         r `shouldBe` ["hello", "world", "hello", "world" :: String]
         sfinal <- readIORef s
         sfinal `shouldBe` (1, 1, 1)

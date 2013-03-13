@@ -1,29 +1,23 @@
 -- |
 -- Stability: experimental
 module Data.Conduit.Resumable (
-    -- * ResumableSource
+    -- * Resumable sources
     ResumableSource,
     newResumableSource,
     ($$+),
     ($$++),
     ($$+-),
-    finishResumableSource,
 
-    -- * ResumableSink
-    ResumableSink,
-    newResumableSink,
+    -- * Resumable sinks
+    -- $sink
     (+$$),
-    (++$$),
-    (-+$$),
-    finishResumableSink,
 
-    -- * ResumableConduit
+    -- * Resumable conduits
     ResumableConduit,
     newResumableConduit,
     (=$+),
     (=$++),
     (=$+-),
-    finishResumableConduit,
 ) where
 
 import Control.Monad
@@ -38,8 +32,6 @@ import Data.Void
 
 -- ResumableSink (same fixity as $$)
 infixr 0 +$$
-infixr 0 ++$$
-infixr 0 -+$$
 
 -- Not implemented yet
 -- ResumableConduit left fusion (same fixity as $=)
@@ -53,9 +45,7 @@ infixr 2 =$++
 infixr 2 =$+-
 
 ------------------------------------------------------------------------
--- ResumableSource
---
--- NOTE: $$ is defined in terms of $$+ and $$+-
+-- Resumable sources
 
 -- ResumableSource is defined in Data.Conduit.Internal:
 -- data ResumableSource m o = ResumableSource (Source m o) (m ())
@@ -64,59 +54,30 @@ infixr 2 =$+-
 newResumableSource :: Monad m => Source m o -> ResumableSource m o
 newResumableSource src = ResumableSource src (return ())
 
--- | Finalize a 'ResumableSource' by turning it into a 'Source'.
--- The resulting 'Source' may only be used once.
---
--- This may be used instead of '$$+-' to finalize a 'ResumableSource'.
-finishResumableSource :: Monad m => ResumableSource m o -> Source m o
-finishResumableSource (ResumableSource (ConduitM p) final) =
-    ConduitM $ embedFinalizer final p
-
--- | Make the given 'Pipe' run the given finalizer when it finishes,
--- unless it overrides this finalizer by calling 'Data.Conduit.yieldOr'.
-embedFinalizer :: Monad m => m () -> Pipe l i o u m r -> Pipe l i o u m r
-embedFinalizer final0 p0 =
-    go final0 p0
-  where
-    go final p =
-        case p of
-            HaveOutput _ _ _ -> p -- Finalizer overridden.
-                                  -- Downstream will call the new finalizer
-                                  -- if it doesn't use this output value.
-            NeedInput i u -> NeedInput (recurse . i) (recurse . u)
-            Done r        -> PipeM (final >> return (Done r))
-            PipeM mp      -> PipeM (liftM recurse mp)
-            Leftover p' l -> Leftover (recurse p') l
-      where
-        recurse = go final
-
 ------------------------------------------------------------------------
--- ResumableSink
+-- Resumable sinks
 
-newtype ResumableSink i m r = ResumableSink (Pipe i i Void () m r)
-
--- | Convert a 'Sink' into a 'ResumableSink' so it can be used with '++$$'.
-newResumableSink :: Monad m => Sink i m r -> ResumableSink i m r
-newResumableSink (ConduitM sink) = ResumableSink sink
-    -- The 'Monad' constraint here currently isn't needed, but if finalization
-    -- semantics are changed in the future and we need to add a 'Monad'
-    -- constraint here, it will cause less breakage.
+-- $sink
+--
+-- There is no \"ResumableSink\" type because 'Sink' does not require finalizer
+-- support.  A 'Sink' is finalized by letting it run to completion with '$$'.
 
 -- | Connect a source and a sink, allowing the sink to be fed more data later.
 -- Return a 'Right' if the sink completes, or a 'Left' if the source is
 -- exhausted and the sink requests more input.
+--
+-- When you are done with the sink, close it with '$$' so that:
+--
+--  * The sink sees the end of stream.  The sink never sees
+--    'Data.Conduit.await' return 'Nothing' until you finish the sink
+--    with '$$'.
+--
+--  * The sink can release system resources.
 (+$$) :: Monad m
       => Source m i
       -> Sink i m r
-      -> m (Either (ResumableSink i m r) r)
-(+$$) src sink = src ++$$ newResumableSink sink
-
--- | Feed more data to a 'ResumableSink'.
-(++$$) :: Monad m
-       => Source m i
-       -> ResumableSink i m r
-       -> m (Either (ResumableSink i m r) r)
-(++$$) (ConduitM left0) (ResumableSink right0) =
+      -> m (Either (Sink i m r) r)
+(+$$) (ConduitM left0) (ConduitM right0) =
     goRight (return ()) left0 right0
   where
     goRight final left right =
@@ -132,31 +93,14 @@ newResumableSink (ConduitM sink) = ResumableSink sink
             HaveOutput left' final' o -> goRight final' left' (rp o)
             NeedInput _ lc            -> recurse (lc ())
             Done _                    -> return $ Left $
-                                         ResumableSink $ NeedInput rp rc
+                                         ConduitM $ NeedInput rp rc
             PipeM mp                  -> mp >>= recurse
             Leftover p _              -> recurse p
       where
         recurse = goLeft rp rc final
 
--- | Feed the final data to a 'ResumableSink' and close it.  This must be used
--- after '+$$' and '++$$' so that:
---
---  * The sink sees the end of stream.  The sink never sees
---    'Data.Conduit.await' return 'Nothing' until you do this.
---
---  * The sink can release system resources.
-(-+$$) :: Monad m => Source m i -> ResumableSink i m r -> m r
-(-+$$) src (ResumableSink rsink) = src $$ ConduitM rsink
-
--- | Finalize a 'ResumableSink' by turning it into a 'Sink'.
--- The resulting 'Sink' may only be used once.
---
--- This may be used instead of '-+$$' to finalize a 'ResumableSink'.
-finishResumableSink :: Monad m => ResumableSink i m r -> Sink i m r
-finishResumableSink (ResumableSink p) = ConduitM p
-
 ------------------------------------------------------------------------
--- ResumableConduit
+-- Resumable conduits
 
 data ResumableConduit i m o = ResumableConduit (Pipe i i o () m ()) (m ())
 
@@ -223,3 +167,21 @@ newResumableConduit (ConduitM p) = ResumableConduit p (return ())
 finishResumableConduit :: Monad m => ResumableConduit i m o -> Conduit i m o
 finishResumableConduit (ResumableConduit p final) =
     ConduitM $ embedFinalizer final p
+
+-- | Make the given 'Pipe' run the given finalizer when it finishes,
+-- unless it overrides this finalizer by calling 'Data.Conduit.yieldOr'.
+embedFinalizer :: Monad m => m () -> Pipe l i o u m r -> Pipe l i o u m r
+embedFinalizer final0 p0 =
+    go final0 p0
+  where
+    go final p =
+        case p of
+            HaveOutput _ _ _ -> p -- Finalizer overridden.
+                                  -- Downstream will call the new finalizer
+                                  -- if it doesn't use this output value.
+            NeedInput i u -> NeedInput (recurse . i) (recurse . u)
+            Done r        -> PipeM (final >> return (Done r))
+            PipeM mp      -> PipeM (liftM recurse mp)
+            Leftover p' l -> Leftover (recurse p') l
+      where
+        recurse = go final

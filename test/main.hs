@@ -191,6 +191,37 @@ main = hspec $ do
         sfinal <- readIORef s
         sfinal `shouldBe` (1, 1, 1)
 
+      it "+$$+ and company" $ do
+        ref <- newIORef ([] :: [String])
+        let takeRef = liftIO $ do
+                xs <- readIORef ref
+                writeIORef ref []
+                return $! reverse xs
+        let src0  = mapM_ yield "Hello world"
+            sink0 = conduitWords =$ CL.mapM_ (modifyIORef ref . (:))
+        (src1, Left sink1) <- src0 +$$+ sink0
+        ["Hello"] <- takeRef  -- "world" not generated yet because sink
+                              -- did not see EOF.
+
+        Nothing <- src1 $$+- await
+
+        (src2, Left sink2) <- (mapM_ yield "ly folk") +$$+ sink1
+        ["worldly"] <- takeRef  -- See, the world didn't end, it was just cut
+                                -- apart due to some boundary issue.
+
+        (src3, Left sink3) <- src2 +$$++ sink2
+        [] <- takeRef -- No progress; same source and sink.
+
+        Left sink4 <- src3 +$$+- sink3
+        [] <- takeRef -- Again, the sink did not see EOF yet, so doesn't know
+                      -- if the word will have more letters.
+
+        return () $$ sink4
+        ["folk"] <- takeRef
+
+        return ()
+
+
 it' :: String -> IO () -> Spec
 it' = it
 

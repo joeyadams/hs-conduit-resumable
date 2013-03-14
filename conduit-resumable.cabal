@@ -22,7 +22,7 @@ library
         Data.Conduit.Resumable
 
     build-depends: base >= 4.3 && < 5
-                 , conduit
+                 , conduit >= 1.0.1 && < 1.1
                  , transformers
                  , void
 

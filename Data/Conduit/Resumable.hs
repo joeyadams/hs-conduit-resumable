@@ -1,12 +1,8 @@
 module Data.Conduit.Resumable (
     -- * Resumable sources
-    -- | The following (except 'newResumableSource') is re-exported
-    --   from "Data.Conduit".
-    ResumableSource,
+    -- | Resumable sources are provided by the conduit package itself.
+    -- See 'ResumableSource'.
     newResumableSource,
-    ($$+),
-    ($$++),
-    ($$+-),
 
     -- * Resumable sinks
     -- $sink
@@ -31,20 +27,11 @@ import Data.Conduit
 import Data.Conduit.Internal
 import Data.Void
 
--- ResumableSource (same fixity as $$)
--- infixr 0 $$+
--- infixr 0 $$++
--- infixr 0 $$+-
-
 -- ResumableSink (same fixity as $$)
 infixr 0 +$$
 infixr 0 +$$+
-
--- Not implemented yet
--- ResumableConduit left fusion (same fixity as $=)
--- infixl 1 +$=
--- infixl 1 ++$=
--- infixl 1 -+$=
+infixr 0 +$$++
+infixr 0 +$$+-
 
 -- ResumableConduit right fusion (same fixity as =$ and =$=)
 infixr 2 =$+
